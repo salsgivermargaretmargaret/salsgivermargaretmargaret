@@ -1,0 +1,61 @@
+name: CI Pipeline
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Check project files
+        id: project
+        shell: bash
+        run: |
+          if [ -f package.json ] || [ -f tsconfig.json ] || [ -f src ] || [ -f tests ]; then
+            echo "project=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "project=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.project.outputs.project == 'true'
+        run: npm ci
+
+      - name: Lint
+        if: steps.project.outputs.project == 'true'
+        run: npm run lint --if-present
+
+      - name: Build or Type Check
+        if: steps.project.outputs.project == 'true'
+        run: npm run build --if-present
+
+      - name: Test
+        if: steps.project.outputs.project == 'true'
+        run: npm test -- --runInBand
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: printf '%s\n' 'CI completed for the selected Node.js matrix.' >> "$GITHUB_STEP_SUMMARY"
